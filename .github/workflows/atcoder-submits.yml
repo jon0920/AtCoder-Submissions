@@ -9,8 +9,80 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: mizo0103/atcoder-submits-action@v1
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          atcoder_user_id: 'jon0920'
-          github_token: ${{ secrets.APP_TOKEN }}
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Fetch AtCoder Submissions
+        env:
+          ATCODER_USER: 'jon0920'
+        run: |
+          python -c "
+          import os, requests, json, time, re
+
+          user_id = os.environ['ATCODER_USER']
+          url = f'https://kenkoooo.com/atcoder/atcoder-api/v3/user/submissions?user={user_id}&from_second=0'
+          res = requests.get(url)
+          if res.status_code != 200:
+              print('API Fetch failed')
+              exit(1)
+
+          submissions = res.json()
+          ac_submissions = [s for s in submissions if s.get('result') == 'AC']
+          print(f'Total AC Submissions found: {len(ac_submissions)}')
+
+          # 最新順に並び替え
+          for sub in ac_submissions:
+              contest_id = sub['contest_id']
+              problem_id = sub['problem_id']
+              sub_id = sub['id']
+              lang = sub.get('language', '')
+              
+              # 拡張子判定
+              ext = '.cpp'
+              if 'Python' in lang or 'PyPy' in lang:
+                  ext = '.py'
+              elif 'C#' in lang:
+                  ext = '.cs'
+              elif 'Java' in lang:
+                  ext = '.java'
+
+              dir_path = os.path.join('submissions', contest_id)
+              os.makedirs(dir_path, exist_ok=True)
+              file_path = os.path.join(dir_path, f'{problem_id}_{sub_id}{ext}')
+
+              if os.path.exists(file_path):
+                  continue
+
+              # コードの取得
+              sub_url = f'https://atcoder.jp/contests/{contest_id}/submissions/{sub_id}'
+              html = requests.get(sub_url).text
+              # submissionCode idのタグから取得
+              match = re.search(r'<pre id=\"submissionCode\"[^>]*>(.*?)</pre>', html, re.DOTALL)
+              if match:
+                  import html as html_lib
+                  code = html_lib.unescape(match.group(1))
+                  with open(file_path, 'w', encoding='utf-8') as f:
+                      f.write(code)
+                  print(f'Saved: {file_path}')
+                  time.sleep(1) # AtCoderサーバーへの配慮
+          "
+
+      - name: Commit and Push
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          if ! git diff --staged --quiet; then
+            git commit -m "Auto update AtCoder submissions"
+            git push
+          fi
