@@ -96,5 +96,5 @@ jobs:
             git commit -m "Auto update AtCoder submissions"
             git push
           else
-            print("No changes to commit")
+            echo "No changes to commit"
           fi
