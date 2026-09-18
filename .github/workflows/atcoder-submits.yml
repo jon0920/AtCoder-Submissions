@@ -20,18 +20,21 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests
+          pip install requests beautifulsoup4
 
       - name: Fetch AtCoder Submissions
         env:
           ATCODER_USER: 'jon0920'
         run: |
           python -c "
-          import os, requests, json, time, re
+          import os, requests, time, re, html
+          from bs4 import BeautifulSoup
 
           user_id = os.environ['ATCODER_USER']
           url = f'https://kenkoooo.com/atcoder/atcoder-api/v3/user/submissions?user={user_id}&from_second=0'
-          res = requests.get(url)
+          
+          headers = {'User-Agent': 'Mozilla/5.0'}
+          res = requests.get(url, headers=headers)
           if res.status_code != 200:
               print('API Fetch failed')
               exit(1)
@@ -40,14 +43,13 @@ jobs:
           ac_submissions = [s for s in submissions if s.get('result') == 'AC']
           print(f'Total AC Submissions found: {len(ac_submissions)}')
 
-          # 最新順に並び替え
-          for sub in ac_submissions:
+          saved_count = 0
+          for idx, sub in enumerate(ac_submissions, 1):
               contest_id = sub['contest_id']
               problem_id = sub['problem_id']
               sub_id = sub['id']
               lang = sub.get('language', '')
               
-              # 拡張子判定
               ext = '.cpp'
               if 'Python' in lang or 'PyPy' in lang:
                   ext = '.py'
@@ -55,6 +57,8 @@ jobs:
                   ext = '.cs'
               elif 'Java' in lang:
                   ext = '.java'
+              elif 'C' in lang and 'C++' not in lang:
+                  ext = '.c'
 
               dir_path = os.path.join('submissions', contest_id)
               os.makedirs(dir_path, exist_ok=True)
@@ -63,18 +67,24 @@ jobs:
               if os.path.exists(file_path):
                   continue
 
-              # コードの取得
               sub_url = f'https://atcoder.jp/contests/{contest_id}/submissions/{sub_id}'
-              html = requests.get(sub_url).text
-              # submissionCode idのタグから取得
-              match = re.search(r'<pre id=\"submissionCode\"[^>]*>(.*?)</pre>', html, re.DOTALL)
-              if match:
-                  import html as html_lib
-                  code = html_lib.unescape(match.group(1))
-                  with open(file_path, 'w', encoding='utf-8') as f:
-                      f.write(code)
-                  print(f'Saved: {file_path}')
-                  time.sleep(1) # AtCoderサーバーへの配慮
+              try:
+                  sub_res = requests.get(sub_url, headers=headers, timeout=10)
+                  if sub_res.status_code == 200:
+                      soup = BeautifulSoup(sub_res.text, 'html.parser')
+                      code_elem = soup.find('pre', id='submissionCode')
+                      if code_elem:
+                          code = code_elem.text
+                          with open(file_path, 'w', encoding='utf-8') as f:
+                              f.write(code)
+                          saved_count += 1
+                          print(f'[{idx}/{len(ac_submissions)}] Saved: {file_path}')
+                  time.sleep(1)
+              except Exception as e:
+                  print(f'Error fetching {sub_id}: {e}')
+                  continue
+
+          print(f'Finished. Total new files saved: {saved_count}')
           "
 
       - name: Commit and Push
@@ -85,4 +95,6 @@ jobs:
           if ! git diff --staged --quiet; then
             git commit -m "Auto update AtCoder submissions"
             git push
+          else
+            print("No changes to commit")
           fi
