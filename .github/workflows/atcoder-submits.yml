@@ -20,15 +20,14 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests beautifulsoup4
+          pip install requests
 
       - name: Fetch AtCoder Submissions
         env:
           ATCODER_USER: 'jon0920'
         run: |
           python -c "
-          import os, requests, time, re, html
-          from bs4 import BeautifulSoup
+          import os, requests, time
 
           user_id = os.environ['ATCODER_USER']
           url = f'https://kenkoooo.com/atcoder/atcoder-api/v3/user/submissions?user={user_id}&from_second=0'
@@ -67,18 +66,17 @@ jobs:
               if os.path.exists(file_path):
                   continue
 
-              sub_url = f'https://atcoder.jp/contests/{contest_id}/submissions/{sub_id}'
+              # Rawコード取得用URL
+              code_url = f'https://atcoder.jp/contests/{contest_id}/submissions/{sub_id}/backend/raw'
               try:
-                  sub_res = requests.get(sub_url, headers=headers, timeout=10)
-                  if sub_res.status_code == 200:
-                      soup = BeautifulSoup(sub_res.text, 'html.parser')
-                      code_elem = soup.find('pre', id='submissionCode')
-                      if code_elem:
-                          code = code_elem.text
-                          with open(file_path, 'w', encoding='utf-8') as f:
-                              f.write(code)
-                          saved_count += 1
-                          print(f'[{idx}/{len(ac_submissions)}] Saved: {file_path}')
+                  code_res = requests.get(code_url, headers=headers, timeout=10)
+                  if code_res.status_code == 200 and code_res.text.strip():
+                      with open(file_path, 'w', encoding='utf-8') as f:
+                          f.write(code_res.text)
+                      saved_count += 1
+                      print(f'[{idx}/{len(ac_submissions)}] Saved: {file_path}')
+                  else:
+                      print(f'[{idx}/{len(ac_submissions)}] Failed status: {code_res.status_code} for {sub_id}')
                   time.sleep(1)
               except Exception as e:
                   print(f'Error fetching {sub_id}: {e}')
